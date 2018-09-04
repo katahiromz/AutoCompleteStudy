@@ -41,7 +41,7 @@ typedef struct AC_EnumStringVtbl
 typedef struct AC_EnumString
 {
     AC_EnumStringVtbl*  lpVtbl;
-    ULONG               m_cRefs;
+    LONG                m_cRefs;
     ULONG               m_istr;
     SIZE_T              m_cstrs;
     SIZE_T              m_capacity;
@@ -79,7 +79,6 @@ AC_EnumString_QueryInterface(
     REFIID riid,
     void **ppvObject)
 {
-    AC_EnumString *this = (AC_EnumString *)This;
     if (!ppvObject)
         return E_POINTER;
 
@@ -104,7 +103,6 @@ AC_EnumString_AddRef(IEnumString* This)
 static ULONG STDMETHODCALLTYPE
 AC_EnumString_Release(IEnumString* This)
 {
-    SIZE_T i;
     AC_EnumString *this = (AC_EnumString *)This;
     LONG ret = InterlockedDecrement(&this->m_cRefs);
     if (!ret)
@@ -154,21 +152,6 @@ AC_EnumString_AddString(AC_EnumString *this, LPCWSTR str)
 
     this->m_pstrs[this->m_cstrs++] = bstr;
     return TRUE;
-}
-
-static void
-AC_EnumString_DeleteString(AC_EnumString *this, SIZE_T index)
-{
-    BSTR *pstrs;
-    SIZE_T count;
-
-    pstrs = this->m_pstrs;
-    count = this->m_cstrs;
-    if (index >= count)
-        return;
-
-    SysFreeString(pstrs[index]);
-    MoveMemory(&pstrs[index], &pstrs[index + 1], (count - 1 - index) * sizeof(BSTR));
 }
 
 static HRESULT STDMETHODCALLTYPE
@@ -227,7 +210,6 @@ AC_EnumString_Clone(IEnumString* This, IEnumString **ppenum)
 {
     AC_EnumString *this, *cloned;
     SIZE_T i, count;
-    UINT cch;
     BSTR *pstrs;
 
     if (!ppenum)
@@ -375,7 +357,7 @@ AC_DoURLHistory(AC_EnumString *pES)
     pszTypedURLs = L"Software\\Microsoft\\Internet Explorer\\TypedURLs";
     HKEY hKey;
     LONG result;
-    DWORD i, cchName, cbValue;
+    DWORD i, cbValue;
     WCHAR szName[32], szValue[MAX_PATH + 32];
 
     result = RegOpenKeyExW(HKEY_CURRENT_USER, pszTypedURLs, 0, KEY_READ, &hKey);
@@ -408,7 +390,7 @@ AC_DoURLMRU(AC_EnumString *pES)
     pszRunMRU = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
     HKEY hKey;
     LONG result;
-    DWORD i, cchName, cbValue;
+    DWORD i, cbValue;
     WCHAR szName[2], szMRUList[64], szValue[MAX_PATH + 32];
     INT cch;
 
@@ -561,8 +543,6 @@ AC_EnumString_Construct(SIZE_T capacity)
 static BOOL
 AC_AdaptFlags(HWND hwndEdit, LPDWORD pdwACO_, LPDWORD pdwSHACF_)
 {
-    static const LPCWSTR s_pszMain =
-        L"HKEY_CURRENT_USER\\Software\\Microsoft\\Internet Explorer\\Main";
     static const LPCWSTR s_pszAutoComplete =
         L"Software\\Microsoft\\Internet Explorer\\AutoComplete";
 
