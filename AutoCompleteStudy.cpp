@@ -19,7 +19,7 @@ BOOL OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
     HWND hCmb1 = GetDlgItem(hwnd, cmb1);
     HWND hwndEdit = (HWND)SendMessage(hCmb1, CBEM_GETEDITCONTROL, 0, 0);
 
-    if (1)
+    if (0)
         SHAutoComplete(hwndEdit, SHACF_FILESYS_ONLY | SHACF_FILESYS_DIRS);
     else if (0)
         SHAutoComplete(hwndEdit, SHACF_FILESYS_ONLY);
