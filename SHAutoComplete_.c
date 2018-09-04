@@ -112,7 +112,7 @@ AC_EnumString_Release(IEnumString* This)
     return ret;
 }
 
-static inline BOOL
+static BOOL
 AC_EnumString_AddBStrNoGrow(AC_EnumString *this, BSTR bstr)
 {
     UINT cch = SysStringLen(bstr);
@@ -161,6 +161,7 @@ AC_EnumString_Next(
     LPOLESTR *rgelt,
     ULONG *pceltFetched)
 {
+    SIZE_T ielt;
     AC_EnumString *this = (AC_EnumString *)This;
 
     if (!rgelt || !pceltFetched)
@@ -172,7 +173,7 @@ AC_EnumString_Next(
     if (this->m_istr >= this->m_cstrs)
         return S_FALSE;
 
-    SIZE_T ielt = 0;
+    ielt = 0;
     for (; ielt < celt && this->m_istr < this->m_cstrs; ++ielt, ++this->m_istr)
     {
         SIZE_T cch = (wcslen(this->m_pstrs[this->m_istr]) + 1);
@@ -307,7 +308,7 @@ AC_DoDir1(AC_EnumString *pES, LPCWSTR pszDir)
     SetCurrentDirectoryW(szCurDir);
 }
 
-static inline void
+static void
 AC_DoDir(AC_EnumString *pES, LPCWSTR pszDir, BOOL bDirOnly)
 {
     if (bDirOnly)
@@ -435,12 +436,13 @@ AC_DoURLMRU(AC_EnumString *pES)
 static HRESULT STDMETHODCALLTYPE
 AC_EnumString_Reset(IEnumString* This)
 {
+    DWORD attrs;
     WCHAR szText[MAX_PATH];
     AC_EnumString *this = (AC_EnumString *)This;
     DWORD dwSHACF_ = this->m_dwSHACF_;
 
     GetWindowTextW(this->m_hwndEdit, szText, ARRAYSIZE(szText));
-    DWORD attrs = GetFileAttributesW(szText);
+    attrs = GetFileAttributesW(szText);
 
     AC_EnumString_ResetContent(this);
 
