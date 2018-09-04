@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <strsafe.h>
 #include <assert.h>
 
 #define NUM_GROW 64
@@ -183,11 +184,12 @@ AC_EnumString_Next(
     for (; ielt < celt && this->m_istr < this->m_cstrs; ++ielt, ++this->m_istr)
     {
         SIZE_T cch = (wcslen(this->m_pstrs[this->m_istr]) + 1);
+        SIZE_T cb = cch * sizeof(WCHAR);
 
-        rgelt[ielt] = (LPWSTR)CoTaskMemAlloc(cch * sizeof(WCHAR));
+        rgelt[ielt] = (LPWSTR)CoTaskMemAlloc(cb);
         if (rgelt[ielt])
         {
-            wcscpy(rgelt[ielt], this->m_pstrs[this->m_istr]);
+            CopyMemory(rgelt[ielt], this->m_pstrs[this->m_istr], cb);
         }
     }
 
@@ -244,74 +246,82 @@ AC_EnumString_Clone(IEnumString* This, IEnumString **ppenum)
     return S_OK;
 }
 
+#define IS_IGNORED_DOTS(sz) ( \
+    sz[0] == L'.' && (sz[1] == 0 || (sz[1] == L'.' && sz[2] == 0)) \
+)
+
 /* directories only */
 static void
 AC_DoDir0(AC_EnumString *pES, LPCWSTR pszDir)
 {
-    WCHAR szCurDir[MAX_PATH], szPath[MAX_PATH];
+    LPWSTR pch;
+    WCHAR szPath[MAX_PATH];
     HANDLE hFind;
     WIN32_FIND_DATAW find;
 
-    GetCurrentDirectoryW(ARRAYSIZE(szCurDir), szCurDir);
-    if (!SetCurrentDirectoryW(pszDir))
-        return;
+    StringCbCopyW(szPath, sizeof(szPath), pszDir);
+    PathAddBackslashW(szPath);
 
-    hFind = FindFirstFileW(L"*", &find);
+    StringCbCatW(szPath, sizeof(szPath), L"*");
+    pch = PathFindFileNameW(szPath);
+    assert(pch);
+
+    hFind = FindFirstFileW(szPath, &find);
     if (hFind != INVALID_HANDLE_VALUE)
     {
         do
         {
-            if (lstrcmpW(find.cFileName, L".") == 0 ||
-                lstrcmpW(find.cFileName, L"..") == 0)
-            {
+            if (IS_IGNORED_DOTS(find.cFileName))
                 continue;
-            }
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
                 continue;
             if (!(find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
                 continue;
 
-            GetFullPathNameW(find.cFileName, ARRAYSIZE(szPath), szPath, NULL);
+            *pch = UNICODE_NULL;
+            PathAddBackslashW(szPath);
+            StringCbCatW(szPath, sizeof(szPath), find.cFileName);
+
             AC_EnumString_AddString(pES, szPath);
         } while (FindNextFileW(hFind, &find));
     }
-
-    SetCurrentDirectoryW(szCurDir);
 }
 
 /* all filesystem objects */
 static void
 AC_DoDir1(AC_EnumString *pES, LPCWSTR pszDir)
 {
-    WCHAR szCurDir[MAX_PATH], szPath[MAX_PATH];
+    LPWSTR pch;
+    WCHAR szPath[MAX_PATH];
     HANDLE hFind;
     WIN32_FIND_DATAW find;
 
-    GetCurrentDirectoryW(ARRAYSIZE(szCurDir), szCurDir);
-    if (!SetCurrentDirectoryW(pszDir))
-        return;
+    StringCbCopyW(szPath, sizeof(szPath), pszDir);
+    PathAddBackslashW(szPath);
 
-    hFind = FindFirstFileW(L"*", &find);
+    StringCbCatW(szPath, sizeof(szPath), L"*");
+    pch = PathFindFileNameW(szPath);
+    assert(pch);
+
+    hFind = FindFirstFileW(szPath, &find);
     if (hFind != INVALID_HANDLE_VALUE)
     {
         do
         {
-            if (lstrcmpW(find.cFileName, L".") == 0 ||
-                lstrcmpW(find.cFileName, L"..") == 0)
-            {
+            if (IS_IGNORED_DOTS(find.cFileName))
                 continue;
-            }
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
                 continue;
 
-            GetFullPathNameW(find.cFileName, ARRAYSIZE(szPath), szPath, NULL);
+            *pch = UNICODE_NULL;
+            PathAddBackslashW(szPath);
+            StringCbCatW(szPath, sizeof(szPath), find.cFileName);
+
             AC_EnumString_AddString(pES, szPath);
         } while (FindNextFileW(hFind, &find));
     }
-
-    SetCurrentDirectoryW(szCurDir);
 }
 
 static void
@@ -372,7 +382,7 @@ AC_DoURLHistory(AC_EnumString *pES)
     {
         for (i = 1; i <= 50; ++i)
         {
-            wsprintfW(szName, L"url%lu", i);
+            StringCbPrintfW(szName, ARRAYSIZE(szName), L"url%lu", i);
 
             szValue[0] = 0;
             cbValue = sizeof(szValue);
