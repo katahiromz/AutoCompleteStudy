@@ -9,7 +9,9 @@
 #include <strsafe.h>
 #include <assert.h>
 
-#define NUM_GROW 64
+#define INITIAL_CAPACITY    256
+#define NUM_GROW            64
+#define MAX_TYPED_URLS      50
 
 typedef struct AC_EnumStringVtbl
 {
@@ -53,7 +55,7 @@ typedef struct AC_EnumString
     SIZE_T              m_capacity;
     BSTR *              m_pstrs;
     HWND                m_hwndEdit;
-    DWORD               m_dwSHACF_;
+    DWORD               m_dwSHACF;
 } AC_EnumString;
 
 static void
@@ -250,102 +252,57 @@ AC_EnumString_Clone(IEnumString* This, IEnumString **ppenum)
 
     cloned->m_capacity = cloned->m_cstrs = count;
     cloned->m_hwndEdit = this->m_hwndEdit;
-    cloned->m_dwSHACF_ = this->m_dwSHACF_;
+    cloned->m_dwSHACF = this->m_dwSHACF;
 
     *ppenum = (IEnumString *)cloned;
     return S_OK;
 }
 
-#define IS_IGNORED_DOTS(sz) ( \
-    sz[0] == L'.' && (sz[1] == 0 || (sz[1] == L'.' && sz[2] == 0)) \
-)
-
-/* directories only */
-static void
-AC_DoDir0(AC_EnumString *pES, LPCWSTR pszDir)
-{
-    LPWSTR pch;
-    WCHAR szPath[MAX_PATH];
-    HANDLE hFind;
-    WIN32_FIND_DATAW find;
-
-    StringCbCopyW(szPath, sizeof(szPath), pszDir);
-    if (!PathAppendW(szPath, L"*"))
-        return;
-
-    pch = PathFindFileNameW(szPath);
-    assert(pch);
-
-    hFind = FindFirstFileW(szPath, &find);
-    if (hFind != INVALID_HANDLE_VALUE)
-    {
-        do
-        {
-            if (IS_IGNORED_DOTS(find.cFileName))
-                continue;
-
-            if (find.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
-                continue;
-            if (!(find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                continue;
-
-            *pch = UNICODE_NULL;
-            if (PathAppendW(szPath, find.cFileName))
-                AC_EnumString_AddString(pES, szPath);
-        } while (FindNextFileW(hFind, &find));
-    }
-}
-
-/* all filesystem objects */
-static void
-AC_DoDir1(AC_EnumString *pES, LPCWSTR pszDir)
-{
-    LPWSTR pch;
-    WCHAR szPath[MAX_PATH];
-    HANDLE hFind;
-    WIN32_FIND_DATAW find;
-
-    StringCbCopyW(szPath, sizeof(szPath), pszDir);
-    if (!PathAppendW(szPath, L"*"))
-        return;
-
-    pch = PathFindFileNameW(szPath);
-    assert(pch);
-
-    hFind = FindFirstFileW(szPath, &find);
-    if (hFind != INVALID_HANDLE_VALUE)
-    {
-        do
-        {
-            if (IS_IGNORED_DOTS(find.cFileName))
-                continue;
-
-            if (find.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
-                continue;
-
-            *pch = UNICODE_NULL;
-            if (PathAppendW(szPath, find.cFileName))
-                AC_EnumString_AddString(pES, szPath);
-        } while (FindNextFileW(hFind, &find));
-    }
-}
+#define IS_IGNORED_DOTS(sz) \
+    ( sz[0] == L'.' && (sz[1] == 0 || (sz[1] == L'.' && sz[2] == 0)) )
 
 static inline void
 AC_DoDir(AC_EnumString *pES, LPCWSTR pszDir, BOOL bDirOnly)
 {
-    if (bDirOnly)
-        AC_DoDir0(pES, pszDir);
-    else
-        AC_DoDir1(pES, pszDir);
+    LPWSTR pch;
+    WCHAR szPath[MAX_PATH];
+    HANDLE hFind;
+    WIN32_FIND_DATAW find;
+
+    StringCbCopyW(szPath, sizeof(szPath), pszDir);
+    if (!PathAppendW(szPath, L"*"))
+        return;
+
+    pch = PathFindFileNameW(szPath);
+    assert(pch);
+
+    hFind = FindFirstFileW(szPath, &find);
+    if (hFind != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if (IS_IGNORED_DOTS(find.cFileName))
+                continue;
+            if (find.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
+                continue;
+            if (bDirOnly && !(find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                continue;
+
+            *pch = UNICODE_NULL;
+            if (PathAppendW(szPath, find.cFileName))
+                AC_EnumString_AddString(pES, szPath);
+        } while (FindNextFileW(hFind, &find));
+    }
 }
 
 static void
-AC_DoFiles(AC_EnumString *pES, BOOL bDirOnly)
+AC_DoDrives(AC_EnumString *pES, BOOL bDirOnly)
 {
     WCHAR sz[4];
     UINT uType;
     DWORD i, dwBits = GetLogicalDrives();
-    for (i = 0; i < sizeof(DWORD) * 8; ++i)
+
+    for (i = 0; i <= L'Z' - L'A'; ++i)
     {
         if (dwBits & (1 << i))
         {
@@ -377,7 +334,7 @@ static void
 AC_DoURLHistory(AC_EnumString *pES)
 {
     static const LPCWSTR
-    pszTypedURLs = L"Software\\Microsoft\\Internet Explorer\\TypedURLs";
+        pszTypedURLs = L"Software\\Microsoft\\Internet Explorer\\TypedURLs";
     HKEY hKey;
     LONG result;
     DWORD i, cbValue;
@@ -386,7 +343,7 @@ AC_DoURLHistory(AC_EnumString *pES)
     result = RegOpenKeyExW(HKEY_CURRENT_USER, pszTypedURLs, 0, KEY_READ, &hKey);
     if (result == ERROR_SUCCESS)
     {
-        for (i = 1; i <= 50; ++i)
+        for (i = 1; i <= MAX_TYPED_URLS; ++i)
         {
             StringCbPrintfW(szName, sizeof(szName), L"url%lu", i);
 
@@ -410,7 +367,7 @@ static void
 AC_DoURLMRU(AC_EnumString *pES)
 {
     static const LPCWSTR
-    pszRunMRU = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
+        pszRunMRU = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
     HKEY hKey;
     LONG result;
     DWORD i, cbValue;
@@ -425,7 +382,7 @@ AC_DoURLMRU(AC_EnumString *pES)
         result = RegQueryValueExW(hKey, L"MRUList", NULL, NULL, (LPBYTE)szMRUList, &cbValue);
         if (result == ERROR_SUCCESS)
         {
-            for (i = 0; i < 26; ++i)
+            for (i = 0; i <= L'z' - L'a'; ++i)
             {
                 if (szMRUList[i] == 0)
                     break;
@@ -461,16 +418,16 @@ AC_EnumString_Reset(IEnumString* This)
     DWORD attrs;
     WCHAR szText[MAX_PATH];
     AC_EnumString *this = (AC_EnumString *)This;
-    DWORD dwSHACF_ = this->m_dwSHACF_;
+    DWORD dwSHACF = this->m_dwSHACF;
 
     GetWindowTextW(this->m_hwndEdit, szText, ARRAYSIZE(szText));
     attrs = GetFileAttributesW(szText);
 
     AC_EnumString_ResetContent(this);
 
-    if (dwSHACF_ & (SHACF_FILESYS_ONLY | SHACF_FILESYSTEM | SHACF_FILESYS_DIRS))
+    if (dwSHACF & (SHACF_FILESYS_ONLY | SHACF_FILESYSTEM | SHACF_FILESYS_DIRS))
     {
-        BOOL bDirOnly = !!(dwSHACF_ & SHACF_FILESYS_DIRS);
+        BOOL bDirOnly = !!(dwSHACF & SHACF_FILESYS_DIRS);
         if (attrs != INVALID_FILE_ATTRIBUTES)
         {
             if (attrs & FILE_ATTRIBUTE_DIRECTORY)
@@ -485,17 +442,17 @@ AC_EnumString_Reset(IEnumString* This)
         }
         else
         {
-            AC_DoFiles(this, bDirOnly);
+            AC_DoDrives(this, bDirOnly);
         }
     }
 
-    if (!(dwSHACF_ & (SHACF_FILESYS_ONLY)))
+    if (!(dwSHACF & (SHACF_FILESYS_ONLY)))
     {
-        if (dwSHACF_ & SHACF_URLHISTORY)
+        if (dwSHACF & SHACF_URLHISTORY)
         {
             AC_DoURLHistory(this);
         }
-        if (dwSHACF_ & SHACF_URLMRU)
+        if (dwSHACF & SHACF_URLMRU)
         {
             AC_DoURLMRU(this);
         }
@@ -546,84 +503,84 @@ AC_EnumString_Construct(SIZE_T capacity)
 }
 
 static BOOL
-AC_AdaptFlags(HWND hwndEdit, LPDWORD pdwACO_, LPDWORD pdwSHACF_)
+AC_AdaptFlags(HWND hwndEdit, LPDWORD pdwACO, LPDWORD pdwSHACF)
 {
     static const LPCWSTR s_pszAutoComplete =
         L"Software\\Microsoft\\Internet Explorer\\AutoComplete";
 
-    DWORD dwType, cbValue, dwACO_, dwSHACF_;
+    DWORD dwType, cbValue, dwACO, dwSHACF;
     WCHAR szValue[8];
 
-    dwSHACF_ = *pdwSHACF_;
+    dwSHACF = *pdwSHACF;
 
-    dwACO_ = 0;
-    if (dwSHACF_ == SHACF_DEFAULT)
-        dwSHACF_ = SHACF_FILESYSTEM | SHACF_URLALL;
+    dwACO = 0;
+    if (dwSHACF == SHACF_DEFAULT)
+        dwSHACF = SHACF_FILESYSTEM | SHACF_URLALL;
 
-    if (dwSHACF_ & SHACF_AUTOAPPEND_FORCE_OFF)
+    if (dwSHACF & SHACF_AUTOAPPEND_FORCE_OFF)
     {
-        ;
+        // do nothing
     }
-    else if (dwSHACF_ & SHACF_AUTOAPPEND_FORCE_ON)
+    else if (dwSHACF & SHACF_AUTOAPPEND_FORCE_ON)
     {
-        dwACO_ |= ACO_AUTOAPPEND;
+        dwACO |= ACO_AUTOAPPEND;
     }
     else
     {
         cbValue = sizeof(szValue);
-        if (ERROR_SUCCESS != SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete, L"Append Completion",
-                                         &dwType, szValue, &cbValue) ||
+        if (SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete, L"Append Completion",
+                        &dwType, szValue, &cbValue) != ERROR_SUCCESS ||
             _wcsicmp(szValue, L"no") != 0)
         {
-            dwACO_ |= ACO_AUTOSUGGEST;
+            dwACO |= ACO_AUTOSUGGEST;
         }
     }
 
-    if (dwSHACF_ & SHACF_AUTOSUGGEST_FORCE_OFF)
+    if (dwSHACF & SHACF_AUTOSUGGEST_FORCE_OFF)
     {
-        ;
+        // do nothing
     }
-    else if (dwSHACF_ & SHACF_AUTOSUGGEST_FORCE_ON)
+    else if (dwSHACF & SHACF_AUTOSUGGEST_FORCE_ON)
     {
-        dwACO_ |= ACO_AUTOSUGGEST;
+        dwACO |= ACO_AUTOSUGGEST;
     }
     else
     {
         cbValue = sizeof(szValue);
-        if (ERROR_SUCCESS != SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete,
-                                         L"AutoSuggest", &dwType, szValue, &cbValue) ||
+        if (SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete, L"AutoSuggest",
+                        &dwType, szValue, &cbValue) != ERROR_SUCCESS ||
             _wcsicmp(szValue, L"no") != 0)
         {
-            dwACO_ |= ACO_AUTOSUGGEST;
+            dwACO |= ACO_AUTOSUGGEST;
         }
     }
 
-    if (dwSHACF_ & SHACF_USETAB)
-        dwACO_ |= ACO_USETAB;
+    if (dwSHACF & SHACF_USETAB)
+        dwACO |= ACO_USETAB;
 
     if (GetWindowLongPtr(hwndEdit, GWL_EXSTYLE) & WS_EX_RTLREADING)
     {
-        dwACO_ |= ACO_RTLREADING;
+        dwACO |= ACO_RTLREADING;
     }
 
-    if (!(dwACO_ & (ACO_AUTOSUGGEST | ACO_AUTOAPPEND)))
+    if (!(dwACO & (ACO_AUTOSUGGEST | ACO_AUTOAPPEND)))
         return FALSE;
 
-    *pdwACO_ = dwACO_;
-    *pdwSHACF_ = dwSHACF_;
+    *pdwACO = dwACO;
+    *pdwSHACF = dwSHACF;
 
     return TRUE;
 }
 
 static IEnumString *
-AC_CreateEnumString(IAutoComplete2 *pAC2, HWND hwndEdit, DWORD dwSHACF_)
+AC_CreateEnumString(IAutoComplete2 *pAC2, HWND hwndEdit, DWORD dwSHACF)
 {
     IEnumString *ret;
-    AC_EnumString *this = AC_EnumString_Construct(256);
+    AC_EnumString *this = AC_EnumString_Construct(INITIAL_CAPACITY);
     if (!this)
         return NULL;
 
-    this->m_dwSHACF_ = dwSHACF_;
+    this->m_dwSHACF = dwSHACF;
     this->m_hwndEdit = hwndEdit;
 
     ret = (IEnumString *)this;
@@ -632,16 +589,28 @@ AC_CreateEnumString(IAutoComplete2 *pAC2, HWND hwndEdit, DWORD dwSHACF_)
     return ret;
 }
 
-HRESULT WINAPI
-SHAutoComplete_(HWND hwndEdit, DWORD dwFlags)
+/*************************************************************************
+ *      SHAutoComplete  	[SHLWAPI.@]
+ *
+ * Enable auto-completion for an edit control.
+ *
+ * PARAMS
+ *  hwndEdit [I] Handle of control to enable auto-completion for
+ *  dwFlags  [I] SHACF_ flags from "shlwapi.h"
+ *
+ * RETURNS
+ *  Success: S_OK. Auto-completion is enabled for the control.
+ *  Failure: An HRESULT error code indicating the error.
+ */
+HRESULT WINAPI SHAutoComplete_(HWND hwndEdit, DWORD dwFlags)
 {
     HRESULT hr;
     LPAUTOCOMPLETE2 pAC2 = NULL;
     LPENUMSTRING pES;
-    DWORD dwACO_;
+    DWORD dwACO;
     DWORD dwClsCtx = CLSCTX_INPROC_HANDLER | CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER;
 
-    if (!AC_AdaptFlags(hwndEdit, &dwACO_, &dwFlags))
+    if (!AC_AdaptFlags(hwndEdit, &dwACO, &dwFlags))
     {
         return S_OK;
     }
@@ -663,7 +632,7 @@ SHAutoComplete_(HWND hwndEdit, DWORD dwFlags)
     hr = IAutoComplete2_Init(pAC2, hwndEdit, (LPUNKNOWN)pES, NULL, L"www.%s.com");
     if (SUCCEEDED(hr))
     {
-        IAutoComplete2_SetOptions(pAC2, dwACO_);
+        IAutoComplete2_SetOptions(pAC2, dwACO);
     }
 
     IUnknown_Release(pAC2);
