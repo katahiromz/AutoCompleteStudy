@@ -1,3 +1,7 @@
+// SHAutoComplete_.c
+// Copyright (C) 2018 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
+// This file is public domain software.
+
 #define COBJMACROS
 #include <windows.h>
 #include <shlobj.h>
