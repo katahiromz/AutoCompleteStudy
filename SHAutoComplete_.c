@@ -260,9 +260,7 @@ AC_DoDir0(AC_EnumString *pES, LPCWSTR pszDir)
     WIN32_FIND_DATAW find;
 
     StringCbCopyW(szPath, sizeof(szPath), pszDir);
-    PathAddBackslashW(szPath);
-
-    StringCbCatW(szPath, sizeof(szPath), L"*");
+    PathAppendW(szPath, L"*");
     pch = PathFindFileNameW(szPath);
     assert(pch);
 
@@ -280,8 +278,7 @@ AC_DoDir0(AC_EnumString *pES, LPCWSTR pszDir)
                 continue;
 
             *pch = UNICODE_NULL;
-            PathAddBackslashW(szPath);
-            StringCbCatW(szPath, sizeof(szPath), find.cFileName);
+            PathAppendW(szPath, find.cFileName);
 
             AC_EnumString_AddString(pES, szPath);
         } while (FindNextFileW(hFind, &find));
@@ -298,9 +295,7 @@ AC_DoDir1(AC_EnumString *pES, LPCWSTR pszDir)
     WIN32_FIND_DATAW find;
 
     StringCbCopyW(szPath, sizeof(szPath), pszDir);
-    PathAddBackslashW(szPath);
-
-    StringCbCatW(szPath, sizeof(szPath), L"*");
+    PathAppendW(szPath, L"*");
     pch = PathFindFileNameW(szPath);
     assert(pch);
 
@@ -316,15 +311,14 @@ AC_DoDir1(AC_EnumString *pES, LPCWSTR pszDir)
                 continue;
 
             *pch = UNICODE_NULL;
-            PathAddBackslashW(szPath);
-            StringCbCatW(szPath, sizeof(szPath), find.cFileName);
+            PathAppendW(szPath, find.cFileName);
 
             AC_EnumString_AddString(pES, szPath);
         } while (FindNextFileW(hFind, &find));
     }
 }
 
-static void
+static inline void
 AC_DoDir(AC_EnumString *pES, LPCWSTR pszDir, BOOL bDirOnly)
 {
     if (bDirOnly)
@@ -382,7 +376,7 @@ AC_DoURLHistory(AC_EnumString *pES)
     {
         for (i = 1; i <= 50; ++i)
         {
-            StringCbPrintfW(szName, ARRAYSIZE(szName), L"url%lu", i);
+            StringCbPrintfW(szName, sizeof(szName), L"url%lu", i);
 
             szValue[0] = 0;
             cbValue = sizeof(szValue);
@@ -432,8 +426,8 @@ AC_DoURLMRU(AC_EnumString *pES)
                 if (result != ERROR_SUCCESS)
                     continue;
 
-                cch = lstrlenW(szValue);
-                if (cch >= 2 && lstrcmpW(&szValue[cch - 2], L"\\1") == 0)
+                cch = wcslen(szValue);
+                if (cch >= 2 && wcscmp(&szValue[cch - 2], L"\\1") == 0)
                 {
                     szValue[cch - 2] = 0;
                 }
@@ -586,7 +580,7 @@ AC_AdaptFlags(HWND hwndEdit, LPDWORD pdwACO_, LPDWORD pdwSHACF_)
         cbValue = sizeof(szValue);
         if (ERROR_SUCCESS != SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete, L"Append Completion",
                                          &dwType, szValue, &cbValue) &&
-            lstrcmpiW(szValue, L"no") != 0)
+            _wcsicmp(szValue, L"no") != 0)
         {
             dwACO_ |= ACO_AUTOSUGGEST;
         }
@@ -605,7 +599,7 @@ AC_AdaptFlags(HWND hwndEdit, LPDWORD pdwACO_, LPDWORD pdwSHACF_)
         cbValue = sizeof(szValue);
         if (ERROR_SUCCESS != SHGetValueW(HKEY_CURRENT_USER, s_pszAutoComplete,
                                          L"AutoSuggest", &dwType, szValue, &cbValue) &&
-            lstrcmpiW(szValue, L"no") != 0)
+            _wcsicmp(szValue, L"no") != 0)
         {
             dwACO_ |= ACO_AUTOSUGGEST;
         }
