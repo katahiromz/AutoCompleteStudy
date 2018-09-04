@@ -46,7 +46,7 @@ typedef struct AC_EnumStringVtbl
 
 typedef struct AC_EnumString
 {
-    AC_EnumStringVtbl*  lpVtbl;
+    AC_EnumStringVtbl * lpVtbl;
     LONG                m_cRefs;
     ULONG               m_istr;
     SIZE_T              m_cstrs;
@@ -168,7 +168,8 @@ AC_EnumString_Next(
     LPOLESTR *rgelt,
     ULONG *pceltFetched)
 {
-    SIZE_T ielt;
+    SIZE_T ielt, cch, cb;
+    BSTR *pstrs;
     AC_EnumString *this = (AC_EnumString *)This;
 
     if (!rgelt || !pceltFetched)
@@ -180,16 +181,18 @@ AC_EnumString_Next(
     if (this->m_istr >= this->m_cstrs)
         return S_FALSE;
 
-    ielt = 0;
-    for (; ielt < celt && this->m_istr < this->m_cstrs; ++ielt, ++this->m_istr)
+    pstrs = this->m_pstrs;
+    for (ielt = 0;
+         ielt < celt && this->m_istr < this->m_cstrs;
+         ++ielt, ++this->m_istr)
     {
-        SIZE_T cch = (wcslen(this->m_pstrs[this->m_istr]) + 1);
-        SIZE_T cb = cch * sizeof(WCHAR);
+        cch = (SysStringLen(pstrs[this->m_istr]) + 1);
+        cb = cch * sizeof(WCHAR);
 
         rgelt[ielt] = (LPWSTR)CoTaskMemAlloc(cb);
         if (rgelt[ielt])
         {
-            CopyMemory(rgelt[ielt], this->m_pstrs[this->m_istr], cb);
+            CopyMemory(rgelt[ielt], pstrs[this->m_istr], cb);
         }
     }
 
@@ -517,24 +520,26 @@ AC_EnumString_Reset(IEnumString* This)
 static AC_EnumString *
 AC_EnumString_Construct(SIZE_T capacity)
 {
+    AC_EnumStringVtbl *lpVtbl;
     AC_EnumString *ret = CoTaskMemAlloc(sizeof(AC_EnumString));
     if (!ret)
         return ret;
 
-    ret->lpVtbl = CoTaskMemAlloc(sizeof(AC_EnumStringVtbl));
-    if (!ret->lpVtbl)
+    lpVtbl = CoTaskMemAlloc(sizeof(AC_EnumStringVtbl));
+    if (!lpVtbl)
     {
         CoTaskMemFree(ret);
         return NULL;
     }
 
-    ret->lpVtbl->QueryInterface = AC_EnumString_QueryInterface;
-    ret->lpVtbl->AddRef = AC_EnumString_AddRef;
-    ret->lpVtbl->Release = AC_EnumString_Release;
-    ret->lpVtbl->Next = AC_EnumString_Next;
-    ret->lpVtbl->Skip = AC_EnumString_Skip;
-    ret->lpVtbl->Reset = AC_EnumString_Reset;
-    ret->lpVtbl->Clone = AC_EnumString_Clone;
+    lpVtbl->QueryInterface = AC_EnumString_QueryInterface;
+    lpVtbl->AddRef = AC_EnumString_AddRef;
+    lpVtbl->Release = AC_EnumString_Release;
+    lpVtbl->Next = AC_EnumString_Next;
+    lpVtbl->Skip = AC_EnumString_Skip;
+    lpVtbl->Reset = AC_EnumString_Reset;
+    lpVtbl->Clone = AC_EnumString_Clone;
+    ret->lpVtbl = lpVtbl;
 
     ret->m_pstrs = (BSTR *)CoTaskMemAlloc(capacity * sizeof(BSTR));;
     if (ret->m_pstrs)
