@@ -59,6 +59,8 @@ WinMain(HINSTANCE   hInstance,
         LPSTR       lpCmdLine,
         INT         nCmdShow)
 {
-    DialogBox(hInstance, MAKEINTRESOURCE(1), NULL, DialogProc);
+    CoInitialize(NULL);
+    DialogBox(hInstance, MAKEINTRESOURCE(100), NULL, DialogProc);
+    CoUninitialize();
     return 0;
 }

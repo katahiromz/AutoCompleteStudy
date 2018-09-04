@@ -2,7 +2,6 @@
 // Copyright (C) 2018 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
 // This file is public domain software.
 #include <windows.h>
-#include "resource.h"
 
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
@@ -12,7 +11,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
 /////////////////////////////////////////////////////////////////////////////
 
-1 DIALOG 0, 0, 214, 64
+100 DIALOG 0, 0, 214, 64
 CAPTION "AutoCompleteStudy"
 STYLE DS_MODALFRAME | DS_CENTER | WS_POPUPWINDOW | WS_DLGFRAME
 FONT 9, "MS Shell Dlg"
