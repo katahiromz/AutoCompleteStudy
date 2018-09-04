@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <assert.h>
 
 #define NUM_GROW 64
 
@@ -57,11 +58,11 @@ typedef struct AC_EnumString
 static void
 AC_EnumString_ResetContent(AC_EnumString *this)
 {
-    SIZE_T i, count = this->m_cstrs;
+    SIZE_T count = this->m_cstrs;
     BSTR *pstrs = this->m_pstrs;
-    for (i = 0; i < count; ++i)
+    while (count-- > 0)
     {
-        SysFreeString(pstrs[i]);
+        SysFreeString(pstrs[count]);
     }
     CoTaskMemFree(this->m_pstrs);
     this->m_pstrs = NULL;
@@ -116,7 +117,7 @@ AC_EnumString_Release(IEnumString* This)
     return ret;
 }
 
-static BOOL
+static inline BOOL
 AC_EnumString_AddBStrNoGrow(AC_EnumString *this, BSTR bstr)
 {
     UINT cch = SysStringLen(bstr);
@@ -124,6 +125,7 @@ AC_EnumString_AddBStrNoGrow(AC_EnumString *this, BSTR bstr)
     if (!bstr)
         return FALSE;
 
+    assert(this->m_cstrs + 1 < this->m_capacity);
     this->m_pstrs[this->m_cstrs++] = bstr;
     return TRUE;
 }
@@ -132,7 +134,7 @@ static BOOL
 AC_EnumString_AddString(AC_EnumString *this, LPCWSTR str)
 {
     SIZE_T new_capacity;
-    BSTR bstr, *pstr;
+    BSTR bstr, *pstrs;
 
     bstr = SysAllocString(str);
     if (!bstr)
@@ -141,17 +143,17 @@ AC_EnumString_AddString(AC_EnumString *this, LPCWSTR str)
     if (this->m_cstrs + 1 >= this->m_capacity)
     {
         new_capacity = this->m_capacity + NUM_GROW;
-        pstr = (BSTR *)CoTaskMemAlloc(new_capacity * sizeof(BSTR));
-        if (!pstr)
+        pstrs = (BSTR *)CoTaskMemAlloc(new_capacity * sizeof(BSTR));
+        if (!pstrs)
         {
             SysFreeString(bstr);
             return FALSE;
         }
 
-        CopyMemory(pstr, this->m_pstrs, this->m_cstrs * sizeof(BSTR));
+        CopyMemory(pstrs, this->m_pstrs, this->m_cstrs * sizeof(BSTR));
         CoTaskMemFree(this->m_pstrs);
+        this->m_pstrs = pstrs;
         this->m_capacity = new_capacity;
-        this->m_pstrs = pstr;
     }
 
     this->m_pstrs[this->m_cstrs++] = bstr;
